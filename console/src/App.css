@@ -1,0 +1,134 @@
+:root {
+  font-family: system-ui, -apple-system, "Helvetica Neue", sans-serif;
+  color-scheme: light dark;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+}
+
+.app {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 24px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.app__header {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  border-bottom: 1px solid #444;
+  padding-bottom: 8px;
+}
+
+.app__header h1 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.app__header small {
+  color: #888;
+  font-size: 12px;
+  font-family: ui-monospace, "SF Mono", monospace;
+}
+
+.panel {
+  border: 1px solid #555;
+  border-radius: 6px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.panel__title {
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #aaa;
+}
+
+.status-dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  margin-right: 6px;
+  vertical-align: middle;
+  background: #888;
+}
+.status-dot--disconnected { background: #888; }
+.status-dot--connecting,
+.status-dot--reconnecting { background: #f5a623; animation: pulse 1s infinite; }
+.status-dot--connected { background: #2ecc71; }
+.status-dot--failed { background: #e74c3c; }
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+
+input[type="text"] {
+  font-family: ui-monospace, "SF Mono", monospace;
+  padding: 6px 8px;
+  border: 1px solid #555;
+  border-radius: 4px;
+  background: transparent;
+  color: inherit;
+  flex: 1;
+}
+
+button {
+  padding: 6px 12px;
+  border: 1px solid #555;
+  border-radius: 4px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+button:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+pre {
+  font-family: ui-monospace, "SF Mono", monospace;
+  font-size: 12px;
+  background: rgba(0, 0, 0, 0.2);
+  padding: 8px;
+  border-radius: 4px;
+  margin: 0;
+  overflow: auto;
+  max-height: 200px;
+}
+
+.dpad {
+  display: grid;
+  grid-template-columns: repeat(3, 40px);
+  gap: 4px;
+  width: max-content;
+}
+
+.dpad button {
+  width: 40px;
+  height: 40px;
+  padding: 0;
+}

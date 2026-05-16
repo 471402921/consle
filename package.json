@@ -1,0 +1,19 @@
+{
+  "name": "cute-console-monorepo",
+  "version": "0.0.1",
+  "private": true,
+  "workspaces": [
+    "shared",
+    "console",
+    "relay"
+  ],
+  "scripts": {
+    "dev:console": "npm run dev -w @cute/console",
+    "dev:relay": "npm run dev -w @cute/relay",
+    "build": "npm run build -w @cute/shared && npm run build -w @cute/console && npm run build -w @cute/relay",
+    "typecheck": "npm run typecheck -w @cute/shared && npm run typecheck -w @cute/console && npm run typecheck -w @cute/relay"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.3"
+  }
+}
