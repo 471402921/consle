@@ -4,20 +4,20 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Repo status
 
-This repo is **pre-implementation**: it contains only the product spec ([requirements.md](requirements.md)) and a deploy script ([deploy.sh](deploy.sh)) carried over from a sibling project. There is no source code, no `package.json`, no test runner, and it is not (yet) a git repo. When asked to "build the console" or "start the relay," the right first step is choosing a stack and scaffolding — not searching for files that don't exist.
+Monorepo with three workspaces — `shared/` (envelope + proto types), `console/` (React + Vite frontend), `relay/` (Node + `ws` server). `npm install` at the root resolves all three; `npm run dev:console` / `npm run dev:relay` start dev servers. `npm run typecheck` runs across all three.
 
 [requirements.md](requirements.md) is the source of truth for product scope, protocol contract, MVP boundaries, non-goals, and the seven open questions. Read it before proposing anything. Don't duplicate its content into other docs; link to specific sections instead.
 
-## What this project will become
+Deploy topology lives in [deploy/README.md](deploy/README.md). The handoff doc to the cute_pixel team is [handoff/cute_pixel.md](handoff/cute_pixel.md).
 
-Two deliverables live in this repo (or it will split into `console/` + `relay/` later):
+## What this project is
 
-- **`console`** — desktop browser web app. User types in a `room_id`, connects via WSS, sees character state, takes over the cute_pixel character with WASD / arrow keys / on-screen joystick, toggles autonomous ↔ external control.
-- **`relay`** — small WSS server. Routes by `room_id` + `role`, broadcasts to the opposite role only. **Does not parse message bodies.** Auth = room_id-as-token (≥ 32 chars). MVP target: <100 concurrent rooms, single node.
+Two services live in this repo as workspaces:
+
+- **`console`** — desktop browser web app (React + Vite). User types in a `room_id`, connects via WSS, sees character state, takes over the cute_pixel character with WASD / arrow keys / on-screen joystick, toggles autonomous ↔ external control.
+- **`relay`** — small WSS server (Node + `ws`, bundled via `tsup`). Routes by `room_id` + `role`, broadcasts to the opposite role only. **Does not parse message bodies.** Auth = room_id-as-token (≥ 32 chars). MVP target: <100 concurrent rooms, single node.
 
 The cute_pixel app is the **other client**, not a server. Both app and console are clients to relay — this is what makes cross-NAT (phone 4G + laptop WiFi) work. See [requirements.md §3](requirements.md) for the diagram.
-
-Tech stack is intentionally undecided ([§6](requirements.md), [§7](requirements.md): "任意"). Don't assume React/Node/etc. unless the user picks one — ask.
 
 ## Two protocol layers — keep them separate
 
@@ -32,16 +32,18 @@ The envelope **does not belong in cute_pixel's `proto/`**. The character-level m
 
 ## Deploy script — non-obvious things
 
-[deploy.sh](deploy.sh) targets a Tencent Cloud CVM. Several details are easy to get wrong:
+[deploy.sh](deploy.sh) deploys console + relay to a Tencent Cloud CVM at `1.14.190.95`, sharing the box with a legacy `asset-lab-https.service` on `:443` that **this repo does not manage**. Details that are easy to get wrong:
 
-- **SSH key must be `~/.ssh/jet.pem`** (RSA 2048). `~/.ssh/id_rsa` is NOT installed on the box. Override per-developer with `export ASSET_LAB_SSH_KEY=~/.ssh/your.pem`.
+- **SSH key must be `~/.ssh/jet.pem`** (RSA 2048). `~/.ssh/id_rsa` is NOT installed on the box. Override per-developer with `export CUTE_SSH_KEY=~/.ssh/your.pem`.
 - **User is `ubuntu`.** `root`, `lighthouse`, `centos`, `jet.d` have all been tried and rejected.
-- **Only ports 22 / 443 / 22940 / 18789 are open.** Other ports (8000, 8443, …) appear reachable (`nc -zv` says "succeeded") but data is dropped by the Tencent edge filter. To open another port, edit security group rules in the Tencent console.
-- **Naming carryover:** systemd unit is `asset-lab-https.service`, remote dir is `~/asset_lab/`, deployed URL is `https://1.14.190.95/`. These names are from the previous tenant of this CVM — do **not** rename them as part of unrelated work; that's a separate operational change. The deploy script's `rsync --delete` syncs the whole project dir into `~/asset_lab/`, so the console/relay code will live there regardless of name.
-- **TLS:** self-signed cert at `~/asset_lab/{cert,key}.pem`, generated once, not in git, not overwritten by `deploy`. Browsers require HTTPS-page → WSS, so the relay also needs TLS — plan the cert story before going public.
-- Logs: `./deploy.sh run 'sudo journalctl -u asset-lab-https -n 50 --no-pager'`
+- **Only ports 22 / 443 / 22940 / 18789 are open.** Other ports appear reachable but Tencent edge silently drops data. `443` is `asset-lab-https`, `22940` is taken by another service — **only `18789` is available for cute** (so console + relay must share it via nginx path-routing). To open another port, edit security group rules in the Tencent console.
+- **Topology on `:18789`**: nginx serves `/` → `~/cute/console-dist/` (vite SPA), `/relay/*` → `127.0.0.1:8080` (cute-relay.service, ws upgrade with `/relay` prefix stripped), `/health` → relay health. nginx vhost and systemd unit live at [deploy/nginx-cute.conf](deploy/nginx-cute.conf) and [deploy/cute-relay.service](deploy/cute-relay.service); never hand-edit `/etc/nginx/...` on the box — change the template and rerun `setup`.
+- **Two-phase script**: `./deploy.sh setup` (once) installs nginx + generates self-signed cert + writes vhost + installs systemd unit + installs Node 20 if missing. `./deploy.sh deploy` (every change) builds locally → rsyncs `console/dist/` and `relay/dist/` → `npm ci --omit=dev` on the box → restart cute-relay → reload nginx → curl `/` and `/health`. Setup is idempotent (cert is not overwritten if present).
+- **Relay packaging**: relay is bundled with `tsup` into a single `dist/server.cjs` with `@cute/shared` inlined; only `ws` is left external. Remote box runs `npm ci --omit=dev` and gets one prod dep. Don't try to ship `@cute/shared` separately — it isn't published.
+- **TLS**: self-signed cert at `~/cute/{cert,key}.pem` (10-year, generated once at setup, not in git, not overwritten). Browsers will show a "not secure" warning; click through for MVP. For external demos, a proper domain + Let's Encrypt is the next step.
+- Logs: `./deploy.sh run 'sudo journalctl -u cute-relay -n 50 --no-pager'` and `./deploy.sh run 'sudo tail -30 /var/log/nginx/cute.error.log'`.
 
-Commands: `./deploy.sh {ssh|run "<cmd>"|ping|deploy}`. `deploy` rsyncs → restarts systemd → curls `/` and expects 200.
+Commands: `./deploy.sh {ssh|run "<cmd>"|ping|setup|deploy}`.
 
 ## MVP guardrails
 

@@ -4,6 +4,7 @@ import { isValidRoomId, type Role } from "@cute/shared";
 import { RoomRegistry } from "./room.js";
 
 const PORT = Number(process.env.PORT ?? 8080);
+const HOST = process.env.HOST ?? "127.0.0.1";
 const HEARTBEAT_INTERVAL_MS = 30_000;
 const MAX_MISSED_PINGS = 3;
 
@@ -91,6 +92,6 @@ setInterval(() => {
   });
 }, HEARTBEAT_INTERVAL_MS);
 
-httpServer.listen(PORT, () => {
-  console.log(`relay listening on :${PORT}`);
+httpServer.listen(PORT, HOST, () => {
+  console.log(`relay listening on ${HOST}:${PORT}`);
 });

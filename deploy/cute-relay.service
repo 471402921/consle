@@ -1,0 +1,24 @@
+[Unit]
+Description=cute pixel relay (WebSocket transit, console <-> cute_pixel app)
+After=network.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu/cute/relay
+ExecStart=/usr/bin/node dist/server.cjs
+Restart=on-failure
+RestartSec=3s
+Environment=NODE_ENV=production
+Environment=PORT=8080
+Environment=HOST=127.0.0.1
+
+# 安全 hardening:relay 只读自己目录,无 sudo,无 home 写权。
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/home/ubuntu/cute/relay
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
