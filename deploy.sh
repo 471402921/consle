@@ -98,12 +98,15 @@ cmd_ping() {
 # 一次性远端配置:装 nginx、生 self-signed cert、安装 nginx vhost 和 systemd unit。
 # 幂等:可以重复跑。cert 已存在则不覆盖,nginx vhost / systemd unit 总是更新。
 cmd_setup() {
-  echo "→ [1/5] 远端装 nginx + 建目录"
+  echo "→ [1/5] 远端装 nginx + 建目录 + 让 nginx 能 traverse home"
   ssh "${SSH_OPTS[@]}" "${REMOTE_USER}@${REMOTE_HOST}" '
     set -euo pipefail
     sudo apt-get update -qq
     sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq nginx
     mkdir -p ~/cute/console-dist ~/cute/relay
+    # /home/ubuntu 默认 750,nginx (www-data) traverse 不进。o+x 让 nginx 能进,
+    # 但 home 本身仍不可 ls (没 r 给 others)。
+    chmod o+x ~
   '
 
   echo "→ [2/5] 远端生 self-signed cert (仅在不存在时,10 年有效)"
@@ -167,21 +170,39 @@ cmd_deploy() {
     "${PROJECT_DIR}/console/dist/" \
     "${REMOTE_USER}@${REMOTE_HOST}:cute/console-dist/"
 
-  echo "→ [3/6] rsync relay bundle + package.json → ~/cute/relay/"
-  # 只传 dist + package*.json,不传 src / node_modules / shared
+  echo "→ [3/6] rsync relay bundle → ~/cute/relay/"
+  # 只传 dist,不传 package.json(它含 devDep @cute/shared 这个非公开包,
+  # npm install 在远端没有 monorepo workspaces 上下文会去 registry 找,找不到报 E404)。
+  # 改用下一步生成 prod-only package.json 推过去。
   rsync -az --delete \
     --include='dist/' --include='dist/**' \
-    --include='package.json' --include='package-lock.json' \
     --exclude='*' \
     -e "${SSH_CMD}" \
     "${PROJECT_DIR}/relay/" \
     "${REMOTE_USER}@${REMOTE_HOST}:cute/relay/"
 
-  echo "→ [4/6] 远端 npm ci --omit=dev (装 ws + 跳 devDeps)"
+  echo "→ [3.5/6] 生成 prod-only package.json (只有 ws + start script) 并推送"
+  local ws_ver
+  ws_ver=$(node -p "require('${PROJECT_DIR}/relay/package.json').dependencies.ws")
+  cat > /tmp/cute-relay-prod-package.json <<JSON
+{
+  "name": "@cute/relay",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "dependencies": { "ws": "${ws_ver}" },
+  "scripts": { "start": "node dist/server.cjs" }
+}
+JSON
+  rsync -az -e "${SSH_CMD}" \
+    /tmp/cute-relay-prod-package.json \
+    "${REMOTE_USER}@${REMOTE_HOST}:cute/relay/package.json"
+
+  echo "→ [4/6] 远端 npm install --omit=dev (装 ws)"
   ssh "${SSH_OPTS[@]}" "${REMOTE_USER}@${REMOTE_HOST}" '
     set -euo pipefail
     cd ~/cute/relay
-    npm ci --omit=dev --no-audit --no-fund
+    npm install --omit=dev --no-audit --no-fund
   '
 
   echo "→ [5/6] 重启 cute-relay + reload nginx"

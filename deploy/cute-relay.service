@@ -13,10 +13,10 @@ Environment=NODE_ENV=production
 Environment=PORT=8080
 Environment=HOST=127.0.0.1
 
-# 安全 hardening:relay 只读自己目录,无 sudo,无 home 写权。
+# 安全 hardening:relay 只读自己目录,无 sudo,无新权限。
+# 注:不能用 ProtectHome=true,因为 WorkingDirectory 在 /home/ubuntu/,会 CHDIR 失败。
 NoNewPrivileges=true
 ProtectSystem=strict
-ProtectHome=true
 ReadWritePaths=/home/ubuntu/cute/relay
 PrivateTmp=true
 
