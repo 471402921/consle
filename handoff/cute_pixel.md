@@ -249,13 +249,21 @@ REALTIME_ROOM_ID=<32+ 字符随机串>           # 跟 console 端共用
 
 ---
 
-## 联调地址(待我们这边部署后补)
+## 联调地址(2026-05-17 已上线)
 
 ```
-relay URL    : wss://<待定>      (我们目标:复用 1.14.190.95:443,跟 asset-lab 共享反代)
-console URL  : https://<待定>    (静态站,Vercel / CF Pages)
-开发期 relay : ws://localhost:8080   (本地起 `npm run dev:relay`)
+relay URL    : wss://1.14.190.95:18789/relay     # 直接用,无需域名
+console URL  : https://1.14.190.95:18789/        # 浏览器看
+开发期 relay : ws://localhost:8080                # 本地 npm run dev:relay
 ```
+
+**注意**:
+- TLS 是 self-signed cert,浏览器会弹"不安全"警告 → 点继续访问。**RN WebSocket 也可能因此握手失败**,具体看 RN 配置:
+  - iOS: `Info.plist` 加 `NSAllowsArbitraryLoads = true`(测试期可接受,正式发版前要换正经 cert)
+  - Android: `network_security_config.xml` 允许 `1.14.190.95`
+  - 或者更稳:在 RN 端的 WebSocketClient 实装时跳过 cert 校验(仅 dev / test 期),正式上线前必须撤掉。
+- 443 上跑的 `asset-lab` 是另一个项目,跟本对接无关。
+- room_id 双方约好用同一个 32+ 字符串,MVP 期 hardcode 一个即可。比如 `xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx`(40 个 x)够用。
 
 ---
 
