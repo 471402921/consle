@@ -10,7 +10,7 @@ import "./App.css";
 const DEFAULT_RELAY_URL = import.meta.env.VITE_RELAY_URL ?? "ws://localhost:8080";
 
 export function App(): JSX.Element {
-  const [roomId, setRoomId] = useState("");
+  const [roomId, setRoomId] = useState(import.meta.env.VITE_DEFAULT_ROOM_ID ?? "");
   const [status, setStatus] = useState<ConnectionStatus>("disconnected");
   const [lastEnvelope, setLastEnvelope] = useState<Envelope | null>(null);
   const [characterState, setCharacterState] = useState<CharacterState["payload"] | null>(null);

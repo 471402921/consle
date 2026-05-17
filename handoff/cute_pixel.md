@@ -222,18 +222,24 @@ func _physics_process(_delta):
 
 `app/services/env/` 加两个 key(stub 已留位置):
 
+**线上联调(2026-05-17 已上线)**:
+
 ```
-REALTIME_URL=wss://cute-relay.example.com   # 部署后填真实域名
-REALTIME_ROOM_ID=<32+ 字符随机串>           # 跟 console 端共用
+REALTIME_URL=wss://1.14.190.95:18789/relay
+REALTIME_ROOM_ID=cute-mvp-2026-05-17-jet-dev-aaaaaaaaaaaaaa
 ```
 
-**开发期临时方案**:
-- `REALTIME_URL=ws://localhost:8080`(我们本地 relay)
-- `REALTIME_ROOM_ID=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx`(40 个 x,够 32 字符)
-- 注意是 `ws://` 不是 `wss://`,本地没 TLS
-- 浏览器禁止 HTTPS 页面连 WS,所以本地 console 也必须用 `http://localhost:5173`,不能 https
+**开发期(本地 relay)**:
 
-**room_id 怎么生成 / 分发** 还是 open question(requirements §10 q1),先 hardcode 一个固定串够 MVP 用,生产期再看是不是给 app 嵌二维码 + 时效 token。
+```
+REALTIME_URL=ws://localhost:8080
+REALTIME_ROOM_ID=cute-mvp-2026-05-17-jet-dev-aaaaaaaaaaaaaa
+```
+
+注意:
+- 本地是 `ws://` 不是 `wss://`(无 TLS),浏览器禁止 HTTPS 页 → WS,所以本地 console 也必须 `http://localhost:5173`。
+- 两边 ROOM_ID **必须用同一个值**(40 字符,含 owner + 日期方便 debug)。在 console UI 那一栏直接复制粘贴。
+- room_id 当前 hardcode,生产期再换扫码 + token(见 [requirements.md §10 q1 resolution](../requirements.md))。
 
 ---
 
