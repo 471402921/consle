@@ -222,10 +222,10 @@ func _physics_process(_delta):
 
 `app/services/env/` 加两个 key(stub 已留位置):
 
-**线上联调(2026-05-17 已上线)**:
+**线上联调(2026-05-17 域名 + 正经 TLS)**:
 
 ```
-REALTIME_URL=wss://1.14.190.95:18789/relay
+REALTIME_URL=wss://console.ewow.cn/relay
 REALTIME_ROOM_ID=cute-mvp-2026-05-17-jet-dev-aaaaaaaaaaaaaa
 ```
 
@@ -237,6 +237,7 @@ REALTIME_ROOM_ID=cute-mvp-2026-05-17-jet-dev-aaaaaaaaaaaaaa
 ```
 
 注意:
+- 线上是**腾讯云免费 DV cert**(TrustAsia 签),iOS/Android 都信任,**不需要** `NSAllowsArbitraryLoads` / network_security_config 之类特殊配置。
 - 本地是 `ws://` 不是 `wss://`(无 TLS),浏览器禁止 HTTPS 页 → WS,所以本地 console 也必须 `http://localhost:5173`。
 - 两边 ROOM_ID **必须用同一个值**(40 字符,含 owner + 日期方便 debug)。在 console UI 那一栏直接复制粘贴。
 - room_id 当前 hardcode,生产期再换扫码 + token(见 [requirements.md §10 q1 resolution](../requirements.md))。
@@ -255,21 +256,19 @@ REALTIME_ROOM_ID=cute-mvp-2026-05-17-jet-dev-aaaaaaaaaaaaaa
 
 ---
 
-## 联调地址(2026-05-17 已上线)
+## 联调地址(2026-05-17 域名 + 正经 TLS 上线)
 
 ```
-relay URL    : wss://1.14.190.95:18789/relay     # 直接用,无需域名
-console URL  : https://1.14.190.95:18789/        # 浏览器看
-开发期 relay : ws://localhost:8080                # 本地 npm run dev:relay
+relay URL    : wss://console.ewow.cn/relay      # 腾讯云 DV cert,iOS/Android 都信任
+console URL  : https://console.ewow.cn/         # 浏览器无证书 warning
+开发期 relay : ws://localhost:8080               # 本地 npm run dev:relay
 ```
 
 **注意**:
-- TLS 是 self-signed cert,浏览器会弹"不安全"警告 → 点继续访问。**RN WebSocket 也可能因此握手失败**,具体看 RN 配置:
-  - iOS: `Info.plist` 加 `NSAllowsArbitraryLoads = true`(测试期可接受,正式发版前要换正经 cert)
-  - Android: `network_security_config.xml` 允许 `1.14.190.95`
-  - 或者更稳:在 RN 端的 WebSocketClient 实装时跳过 cert 校验(仅 dev / test 期),正式上线前必须撤掉。
-- 443 上跑的 `asset-lab` 是另一个项目,跟本对接无关。
-- room_id 双方约好用同一个 32+ 字符串,MVP 期 hardcode 一个即可。比如 `xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx`(40 个 x)够用。
+- TLS 是腾讯云免费 DV cert(TrustAsia 签),iOS/Android **不需要** `NSAllowsArbitraryLoads` / network security config 之类特殊配置。
+- cert 到期 2026-08-14(90 天),中途由 console 这边手动续(再申请一张 + 替换),无需联调方动作。
+- 老 URL `https://1.14.190.95:18789/`(自签 cert)保留 1 周作为 fallback,新对接不推荐用。
+- room_id 双方约好用同一个 32+ 字符串,MVP 期 hardcode。已定:`cute-mvp-2026-05-17-jet-dev-aaaaaaaaaaaaaa`(40 字符,见 §7)。
 
 ---
 

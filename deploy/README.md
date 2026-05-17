@@ -9,26 +9,73 @@
 | `nginx-cute.conf` | `/etc/nginx/sites-available/cute.conf` | `./deploy.sh setup` 重新推 + `nginx -s reload` |
 | `cute-relay.service` | `/etc/systemd/system/cute-relay.service` | `./deploy.sh setup` 重新推 + `systemctl daemon-reload + restart` |
 
-## 远端拓扑(简要)
+## 远端拓扑(2026-05-17 域名 + 正经 TLS)
 
 ```
-0.0.0.0:443     → asset-lab-https.service   (不动)
-0.0.0.0:18789   → nginx (cute.conf)
-  ├─ /          → /home/ubuntu/cute/console-dist  (SPA)
-  ├─ /relay/*   → 127.0.0.1:8080  (cute-relay.service, ws upgrade)
-  └─ /health    → 127.0.0.1:8080/health
-127.0.0.1:8080  → cute-relay.service        (本机,不对外)
+0.0.0.0:80      → nginx (cute.conf)
+                  ├─ /.well-known/acme-challenge/ → /var/www/letsencrypt (LE 续期留位,当前未启用)
+                  └─ /*                            → 301 https://$host$request_uri
+
+0.0.0.0:443     → nginx (cute.conf, SSL termination,腾讯 DV cert)
+                  按 server_name 分:
+                  ├─ console.ewow.cn  → /home/ubuntu/cute/console-dist (cute console SPA)
+                  │                    + /relay/* → 127.0.0.1:8080 (cute-relay.service, ws upgrade)
+                  │                    + /health  → 127.0.0.1:8080/health
+                  └─ default_server   → proxy_pass https://127.0.0.1:8001 (asset-lab fallback)
+
+0.0.0.0:18789   → nginx (cute.conf, self-signed cert) — 旧 vhost,1 周过渡 fallback,稳定后删
+0.0.0.0:8001    → asset-lab-https.service (Python SimpleHTTPServer + self-signed,反代后端)
+127.0.0.1:8080  → cute-relay.service (本机,不对外)
 ```
 
-- **cert**:`~/cute/{cert,key}.pem`,self-signed,setup 时一次性生成(10 年有效)。不在 git。
+URL:
+- 主站 console:    `https://console.ewow.cn/`
+- relay WSS:       `wss://console.ewow.cn/relay`
+- asset-lab:       `https://1.14.190.95/`(IP 直访走 fallback vhost)
+- 旧 fallback:     `https://1.14.190.95:18789/`(self-signed,临时)
+
+- **cert(console.ewow.cn)**:腾讯云免费 DV(TrustAsia 签),`~/cute/cert/console.ewow.cn_bundle.crt` + `console.ewow.cn.key`。到期 **2026-08-14**(90 天),续期方法见下文。
+- **cert(18789 fallback)**:`~/cute/cert.pem` / `~/cute/key.pem`,setup 时一次性生成的 self-signed(10 年有效)。
 - **console build**:本地 `npm run build -w @cute/console` 出 `console/dist/`,deploy 时 rsync 到 `~/cute/console-dist/`。
-- **relay bundle**:本地 `npm run build -w @cute/relay`(tsup → `dist/server.cjs`,shared 已 inline),deploy 时 rsync `dist/` + deploy 脚本临时生成的 prod-only `package.json`(只含 `ws`)过去,远端 `npm install --omit=dev` 只装 `ws` 一个依赖。**不传源 package.json**(它带 devDep `@cute/shared`,registry 找不到会报 E404,详见下方"已知陷阱 #2")。
+- **relay bundle**:本地 `npm run build -w @cute/relay`(tsup → `dist/server.cjs`,shared 已 inline),deploy 时 rsync `dist/` + deploy 脚本临时生成的 prod-only `package.json`(只含 `ws`)过去,远端 `npm install --omit=dev` 只装 `ws` 一个依赖。**不传源 package.json**(详见下方"已知陷阱 #2")。
 
 ## 首次上机流程
 
 ```bash
-./deploy.sh setup    # 装 nginx + 生 cert + 装 systemd unit + 装 node 20(只跑一次,幂等)
+./deploy.sh setup    # 装 nginx + 生 self-signed cert + 装 systemd unit + 装 node 20(只跑一次,幂等)
 ./deploy.sh deploy   # build → rsync → restart → 验证(每次)
+```
+
+**注**:setup 不管 `console.ewow.cn` 的 cert(那是腾讯云手动申请的,不入 setup 自动化)。重建机器后需要:
+1. 跑 `setup`(装 nginx / systemd / self-signed cert for 18789)
+2. 手动:在腾讯云控制台重新申请 console.ewow.cn DV cert + 下载 nginx 包 + rsync 到 `~/cute/cert/`
+3. 跑 `deploy`
+
+## cert 续期(console.ewow.cn)
+
+腾讯云免费 DV 是 90 天有效,**到期前手动续**(无自动续期):
+
+```bash
+# 1. 到期前 1 周,腾讯云控制台 → SSL 证书 → 我的证书 → 找到 console.ewow.cn
+#    → 续费 / 重新申请(免费版每年 50 张额度,直接再申请就行)
+# 2. DNS 自动验证,等 5-10 分钟签发
+# 3. 下载 Nginx 格式,解压
+# 4. rsync 推到 box:
+rsync -az -e "ssh -i ~/.ssh/jet.pem -o IdentitiesOnly=yes" \
+  ~/Downloads/console.ewow.cn_nginx/console.ewow.cn_bundle.crt \
+  ~/Downloads/console.ewow.cn_nginx/console.ewow.cn.key \
+  ubuntu@1.14.190.95:/tmp/
+./deploy.sh run '
+  sudo mv /tmp/console.ewow.cn_bundle.crt ~/cute/cert/
+  sudo mv /tmp/console.ewow.cn.key       ~/cute/cert/
+  sudo chmod 644 ~/cute/cert/console.ewow.cn_bundle.crt
+  sudo chmod 600 ~/cute/cert/console.ewow.cn.key
+  sudo nginx -t && sudo systemctl reload nginx
+'
+
+# 5. 验证 cert 新有效期
+echo | openssl s_client -connect console.ewow.cn:443 -servername console.ewow.cn 2>/dev/null \
+  | openssl x509 -noout -dates
 ```
 
 ## 日志位置(远端)
@@ -75,3 +122,15 @@ watch -n 5 'curl -ksS https://1.14.190.95:18789/health'
 
 4. **nginx 静态文件 500,`/home/ubuntu` 权限 750** — nginx user `www-data` 不在 `ubuntu` group,traverse 不进 home,所有静态请求 500。nginx error log 关键字 `stat() "/home/ubuntu/cute/console-dist/index.html" failed (13: Permission denied)`。
    - 解法:`chmod o+x ~`(只开 traverse,不开 read,home 仍不可 `ls`)。setup 已自动跑这一步。
+
+5. **LE HTTP-01 challenge 被腾讯 webblock 拦** — 未 ICP 备案的 IP+域名 走 HTTP 时,Tencent 边缘会把请求重定向到 `https://dnspod.qcloud.com/static/webblock.html?d=<domain>`。LE 现在做 multi-perspective validation,其中一个节点走 Tencent 内网(`43.159.x.x`),触发自家拦截,签证书失败:`Invalid response from .../webblock.html`。
+   - 真实用户走外网 ISP 访问域名**不被拦**(我们 mac 实测 200 OK),所以**只是签证书这一步挂**。
+   - 解法:用**腾讯云免费 DV 证书**(SSL 控制台 → 申请免费证书,TrustAsia 签,90 天有效)代替 LE。腾讯自家签证书的验证不走 webblock。续期手动来,见上文"cert 续期"。
+
+6. **asset-lab hung 6 天没人发现** — systemd 标 `active`,但 python3 单线程 SimpleHTTPServer 被某个慢请求卡死,本机 `curl localhost:443` 都 timeout。重启即修(`sudo systemctl restart asset-lab-https`)。
+   - 教训:Python SimpleHTTPServer 不适合长期 prod,但 asset-lab 已经决定不动。建议 asset-lab 那边加外部 health check(我们这边只 review console + relay)。
+
+7. **nginx 1.24 不支持 `http2 on;` 指令** — 那是 nginx 1.25+ 的新写法。Ubuntu 24.04 仓库里是 1.24.0,要用老式 `listen 443 ssl http2;`(http2 作为 listen 参数,不是独立指令)。配错 `nginx -t` 报 `unknown directive "http2"`。
+
+8. **Ubuntu nginx 默认 vhost 占 :80 default_server** — `apt install nginx` 默认 enable `/etc/nginx/sites-enabled/default`,它 listen 80 default_server。我们的 cute vhost 也想 listen 80 default_server → nginx -t 冲突或 cute vhost 被 default vhost 覆盖。
+   - 解法:`sudo rm -f /etc/nginx/sites-enabled/default` 让 cute vhost 接管。
