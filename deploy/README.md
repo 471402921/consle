@@ -9,33 +9,38 @@
 | `nginx-cute.conf` | `/etc/nginx/sites-available/cute.conf` | `./deploy.sh setup` 重新推 + `nginx -s reload` |
 | `cute-relay.service` | `/etc/systemd/system/cute-relay.service` | `./deploy.sh setup` 重新推 + `systemctl daemon-reload + restart` |
 
-## 远端拓扑(2026-05-17 域名 + 正经 TLS)
+## 远端拓扑(2026-05-17 域名 + 正经 TLS;同日改 :18789 绕腾讯 anti-scan)
 
 ```
 0.0.0.0:80      → nginx (cute.conf)
-                  ├─ /.well-known/acme-challenge/ → /var/www/letsencrypt (LE 续期留位,当前未启用)
+                  ├─ /.well-known/acme-challenge/ → /var/www/letsencrypt (LE 续期留位,未启用)
                   └─ /*                            → 301 https://$host$request_uri
 
 0.0.0.0:443     → nginx (cute.conf, SSL termination,腾讯 DV cert)
                   按 server_name 分:
-                  ├─ console.ewow.cn  → /home/ubuntu/cute/console-dist (cute console SPA)
-                  │                    + /relay/* → 127.0.0.1:8080 (cute-relay.service, ws upgrade)
-                  │                    + /health  → 127.0.0.1:8080/health
+                  ├─ console.ewow.cn  → cute console + relay
+                  │                    ⚠ 实际不通:腾讯边缘 anti-scan 拦截
+                  │                      未备案子域的 SNI 高频 TLS 握手(详见陷阱 #9)
                   └─ default_server   → proxy_pass https://127.0.0.1:8001 (asset-lab fallback)
 
-0.0.0.0:18789   → nginx (cute.conf, self-signed cert) — 旧 vhost,1 周过渡 fallback,稳定后删
-0.0.0.0:8001    → asset-lab-https.service (Python SimpleHTTPServer + self-signed,反代后端)
+0.0.0.0:18789   → nginx (cute.conf,腾讯 DV cert,server_name _)  ← **主流量**
+                  非标端口,腾讯 anti-scan 不监控,10/10 连击 0 失败
+                  ├─ /          → /home/ubuntu/cute/console-dist (cute console SPA)
+                  ├─ /relay/*   → 127.0.0.1:8080 (cute-relay.service, ws upgrade)
+                  └─ /health    → 127.0.0.1:8080/health
+
+0.0.0.0:8001    → asset-lab-https.service (Python SimpleHTTPServer + self-signed)
 127.0.0.1:8080  → cute-relay.service (本机,不对外)
 ```
 
 URL:
-- 主站 console:    `https://console.ewow.cn/`
-- relay WSS:       `wss://console.ewow.cn/relay`
-- asset-lab:       `https://1.14.190.95/`(IP 直访走 fallback vhost)
-- 旧 fallback:     `https://1.14.190.95:18789/`(self-signed,临时)
+- **主站 console:    `https://console.ewow.cn:18789/`**(注意非标端口)
+- **relay WSS:       `wss://console.ewow.cn:18789/relay`**
+- asset-lab:        `https://1.14.190.95/`(IP 直访走 fallback vhost)
+- console :443 入口暂时挂(腾讯 anti-scan),将来 ICP 备案后恢复
 
-- **cert(console.ewow.cn)**:腾讯云免费 DV(TrustAsia 签),`~/cute/cert/console.ewow.cn_bundle.crt` + `console.ewow.cn.key`。到期 **2026-08-14**(90 天),续期方法见下文。
-- **cert(18789 fallback)**:`~/cute/cert.pem` / `~/cute/key.pem`,setup 时一次性生成的 self-signed(10 年有效)。
+- **cert(console.ewow.cn,两个 vhost 共用)**:腾讯云免费 DV(TrustAsia 签),`~/cute/cert/console.ewow.cn_bundle.crt` + `console.ewow.cn.key`。到期 **2026-08-14**(90 天),续期方法见下文。
+- ~~self-signed cert ~/cute/{cert,key}.pem~~ — setup 时生过但**已不使用**(:18789 切到 DV cert 后),可以删但留着也无害。
 - **console build**:本地 `npm run build -w @cute/console` 出 `console/dist/`,deploy 时 rsync 到 `~/cute/console-dist/`。
 - **relay bundle**:本地 `npm run build -w @cute/relay`(tsup → `dist/server.cjs`,shared 已 inline),deploy 时 rsync `dist/` + deploy 脚本临时生成的 prod-only `package.json`(只含 `ws`)过去,远端 `npm install --omit=dev` 只装 `ws` 一个依赖。**不传源 package.json**(详见下方"已知陷阱 #2")。
 
@@ -134,3 +139,9 @@ watch -n 5 'curl -ksS https://1.14.190.95:18789/health'
 
 8. **Ubuntu nginx 默认 vhost 占 :80 default_server** — `apt install nginx` 默认 enable `/etc/nginx/sites-enabled/default`,它 listen 80 default_server。我们的 cute vhost 也想 listen 80 default_server → nginx -t 冲突或 cute vhost 被 default vhost 覆盖。
    - 解法:`sudo rm -f /etc/nginx/sites-enabled/default` 让 cute vhost 接管。
+
+9. **腾讯边缘 anti-scan 拦未备案子域 :443 高频 TLS** — `console.ewow.cn:443` SSL handshake 在 ServerHello 之前被边缘 RST(client 看到 `SSL_ERROR_SYSCALL / read 0 bytes / unexpected eof`)。单次孤立访问可能通,**连击 / iOS 5 次重连(31s 内)必触发**,封禁持续数分钟。box 内 nginx 完全 healthy(systemd active,error log 干净),诊断要从 client 侧 + 网络层入手。
+   - 触发条件:**SNI = 未备案子域** + **标准 :443 端口** + **短时间多次 TLS 握手**。三个都满足才触发。
+   - 解法(临时):换非标端口 — `:18789` 走同一 cert(`~/cute/cert/console.ewow.cn_bundle.crt`),腾讯 anti-scan 不监控非标,实测 10/10 连击 0 失败。`server_name _` 不告诉边缘 SNI 匹配。
+   - 解法(根治):ICP 备案 1.14.190.95(2-3 周审核)。备案后 :443 可恢复用。
+   - 排查命令:`curl -kv https://console.ewow.cn/ 2>&1 | head -20` 看 TLS 握手停在哪步;`echo | openssl s_client -connect console.ewow.cn:443 -servername console.ewow.cn` 看是否 read 0 bytes。

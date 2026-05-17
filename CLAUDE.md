@@ -35,11 +35,13 @@ The envelope **does not belong in cute_pixel's `proto/`**. The character-level m
 [deploy.sh](deploy.sh) deploys console + relay to a Tencent Cloud Lighthouse instance at `1.14.190.95`, sharing the box with a `asset-lab-https.service` that **this repo does not manage** (but coordinates with — see [handoff/asset-lab.md](handoff/asset-lab.md)). Live URLs:
 
 ```
-https://console.ewow.cn/        → cute console SPA   (Tencent DV cert, 90-day, expires 2026-08-14)
-wss://console.ewow.cn/relay     → cute-relay (ws upgrade through nginx)
-https://1.14.190.95/            → asset-lab (nginx fallback vhost, reverse-proxied to localhost:8001)
-https://1.14.190.95:18789/      → cute console old self-signed vhost (1-week fallback; remove after stable)
+https://console.ewow.cn:18789/   → cute console SPA   (Tencent DV cert; **main entrypoint**)
+wss://console.ewow.cn:18789/relay → cute-relay
+https://console.ewow.cn/         → 配着,但腾讯 anti-scan 间歇 RST(SNI=未备案 + :443),不能用
+https://1.14.190.95/             → asset-lab (nginx fallback vhost, reverse-proxied to localhost:8001)
 ```
+
+**Why :18789 and not :443?** `console.ewow.cn:443` triggers Tencent edge anti-scan because the SNI is an un-ICP-registered subdomain on a standard port; iOS 5-times reconnect (31s) reliably triggers RST during TLS ServerHello. `:18789` non-standard escapes the scanner. Root fix is ICP registration (2-3 weeks). See [deploy/README.md gotcha #9](deploy/README.md#已知部署陷阱2026-05-17-踩过的坑) for full diagnosis.
 
 Details that are easy to get wrong:
 
@@ -48,7 +50,7 @@ Details that are easy to get wrong:
 - **Lighthouse firewall (not classic security group)** controls inbound. Currently open: 22 / 80 / 443 / 22940 / 18789. Tencent edge silently drops data on closed ports (`nc -zv` times out, doesn't refuse). To open another port, Lighthouse 控制台 → 实例 → 防火墙.
 - **Topology** is documented in [deploy/README.md](deploy/README.md): nginx on `:443` with host-based routing (`console.ewow.cn` → cute, default → asset-lab fallback), plus `:18789` legacy vhost. Never hand-edit `/etc/nginx/...` or `/etc/systemd/...` on the box — change [deploy/nginx-cute.conf](deploy/nginx-cute.conf) / [deploy/cute-relay.service](deploy/cute-relay.service) and rerun `setup` (or rsync manually for vhost-only changes).
 - **Two-phase script**: `./deploy.sh setup` (once, idempotent) installs nginx + generates self-signed cert for `:18789` + writes vhost + installs systemd unit + installs Node 20. `./deploy.sh deploy` (every change) builds locally → rsyncs `console/dist/` and `relay/dist/` → `npm install --omit=dev` on the box → restart cute-relay → reload nginx → curl `/` and `/health`. **Setup does NOT manage the `console.ewow.cn` cert** — that's manual through Tencent Cloud SSL console (free DV, 90-day, renewal procedure in [deploy/README.md](deploy/README.md#cert-续期consoleewowcn)).
-- **8 known deployment gotchas** documented in [deploy/README.md](deploy/README.md#已知部署陷阱2026-05-17-踩过的坑): `npm ci` vs `install` in monorepo, devDep resolution of `@cute/shared`, `ProtectHome` vs `WorkingDirectory`, `chmod o+x ~` for nginx traversal, **Tencent webblock blocks LE HTTP-01** (so we use Tencent's own DV cert), `asset-lab` Python single-threaded hang, nginx 1.24 vs `http2 on;`, Ubuntu nginx default vhost stealing `:80`. Re-read that before changing `deploy.sh`, `cute-relay.service`, or `nginx-cute.conf`.
+- **9 known deployment gotchas** documented in [deploy/README.md](deploy/README.md#已知部署陷阱2026-05-17-踩过的坑): `npm ci` vs `install` in monorepo, devDep resolution of `@cute/shared`, `ProtectHome` vs `WorkingDirectory`, `chmod o+x ~` for nginx traversal, **Tencent webblock blocks LE HTTP-01** (so we use Tencent's own DV cert), `asset-lab` Python single-threaded hang, nginx 1.24 vs `http2 on;`, Ubuntu nginx default vhost stealing `:80`, **Tencent edge anti-scan rejects un-registered subdomain TLS on :443** (so we use :18789 non-standard port). Re-read that before changing `deploy.sh`, `cute-relay.service`, or `nginx-cute.conf`.
 - **Relay packaging**: relay is bundled with `tsup` into a single `dist/server.cjs` with `@cute/shared` inlined; only `ws` is left external. Remote box runs `npm install --omit=dev` against a generated prod-only `package.json`, gets one prod dep. Don't try to ship `@cute/shared` separately — it isn't published.
 - **TLS certs (two of them)**:
   - `console.ewow.cn`: Tencent free DV at `~/cute/cert/console.ewow.cn_bundle.crt` + `.key`, 90-day, manual renewal.

@@ -222,10 +222,10 @@ func _physics_process(_delta):
 
 `app/services/env/` 加两个 key(stub 已留位置):
 
-**线上联调(2026-05-17 域名 + 正经 TLS)**:
+**线上联调(2026-05-17 域名 + 正经 TLS;走 :18789 绕腾讯 anti-scan)**:
 
 ```
-REALTIME_URL=wss://console.ewow.cn/relay
+REALTIME_URL=wss://console.ewow.cn:18789/relay
 REALTIME_ROOM_ID=cute-mvp-2026-05-17-jet-dev-aaaaaaaaaaaaaa
 ```
 
@@ -256,18 +256,23 @@ REALTIME_ROOM_ID=cute-mvp-2026-05-17-jet-dev-aaaaaaaaaaaaaa
 
 ---
 
-## 联调地址(2026-05-17 域名 + 正经 TLS 上线)
+## 联调地址(2026-05-17 域名 + 正经 TLS 上线;同日改 :18789 绕腾讯 anti-scan)
 
 ```
-relay URL    : wss://console.ewow.cn/relay      # 腾讯云 DV cert,iOS/Android 都信任
-console URL  : https://console.ewow.cn/         # 浏览器无证书 warning
-开发期 relay : ws://localhost:8080               # 本地 npm run dev:relay
+relay URL    : wss://console.ewow.cn:18789/relay      # 注意 :18789(非标端口)
+console URL  : https://console.ewow.cn:18789/         # 同上
+开发期 relay : ws://localhost:8080                     # 本地 npm run dev:relay
 ```
+
+**为什么端口是 :18789 不是 :443**:
+- `:443 + SNI=console.ewow.cn`(未备案子域)触发腾讯边缘 anti-scan,iOS 5 次重连(31s 内)必触发 → TLS 握手在 ServerHello 之前被 RST,呈现"间歇性 reject"。
+- 改用非标 `:18789`,腾讯 anti-scan 不监控,**10/10 连击 0 失败**。
+- 仍是腾讯 DV cert(TrustAsia 签),iOS / Android / 浏览器都信任。`https://console.ewow.cn:443/` 入口暂时挂(被边缘拦),`:18789` 才稳。
 
 **注意**:
 - TLS 是腾讯云免费 DV cert(TrustAsia 签),iOS/Android **不需要** `NSAllowsArbitraryLoads` / network security config 之类特殊配置。
 - cert 到期 2026-08-14(90 天),中途由 console 这边手动续(再申请一张 + 替换),无需联调方动作。
-- 老 URL `https://1.14.190.95:18789/`(自签 cert)保留 1 周作为 fallback,新对接不推荐用。
+- 老 URL `https://1.14.190.95:18789/`(self-signed)留作 fallback,实在出问题再用。
 - room_id 双方约好用同一个 32+ 字符串,MVP 期 hardcode。已定:`cute-mvp-2026-05-17-jet-dev-aaaaaaaaaaaaaa`(40 字符,见 §7)。
 
 ---
