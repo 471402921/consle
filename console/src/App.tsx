@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { Envelope, CharacterState } from "@cute/shared";
+import type { Envelope, CharacterState, SceneLoaded, SceneName, BridgeError } from "@cute/shared";
 import { isValidRoomId } from "@cute/shared";
 import { RelayClient, type ConnectionStatus } from "./client/RelayClient";
 import { ConnectionPanel } from "./components/ConnectionPanel";
@@ -14,6 +14,9 @@ export function App(): JSX.Element {
   const [status, setStatus] = useState<ConnectionStatus>("disconnected");
   const [lastEnvelope, setLastEnvelope] = useState<Envelope | null>(null);
   const [characterState, setCharacterState] = useState<CharacterState["payload"] | null>(null);
+  const [currentScene, setCurrentScene] = useState<SceneName>("interior_scene");
+  const [sceneLoading, setSceneLoading] = useState(false);
+  const [lastError, setLastError] = useState<BridgeError["payload"] | null>(null);
   const clientRef = useRef<RelayClient | null>(null);
 
   const cleanupClient = useCallback(() => {
@@ -36,6 +39,14 @@ export function App(): JSX.Element {
       const msg = env.msg as { type?: string };
       if (msg?.type === "CHARACTER_STATE") {
         setCharacterState((env.msg as CharacterState).payload);
+      }
+      if (msg?.type === "SCENE_LOADED") {
+        const scene = (env.msg as SceneLoaded).payload.scene;
+        setCurrentScene(scene);
+        setSceneLoading(false);
+      }
+      if (msg?.type === "BRIDGE_ERROR") {
+        setLastError((env.msg as BridgeError).payload);
       }
     });
     client.connect();
@@ -69,9 +80,15 @@ export function App(): JSX.Element {
         onDisconnect={handleDisconnect}
       />
 
-      <CharacterView state={characterState} lastEnvelope={lastEnvelope} />
+      <CharacterView state={characterState} lastEnvelope={lastEnvelope} lastError={lastError} />
 
-      <ControlPanel disabled={!connected} onSend={sendCommand} />
+      <ControlPanel
+        disabled={!connected}
+        onSend={sendCommand}
+        currentScene={currentScene}
+        sceneLoading={sceneLoading}
+        onSceneLoadStart={() => setSceneLoading(true)}
+      />
     </div>
   );
 }

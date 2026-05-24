@@ -132,3 +132,14 @@ pre {
   height: 40px;
   padding: 0;
 }
+
+.btn--active {
+  border-color: #2ecc71;
+  color: #2ecc71;
+}
+
+.separator {
+  width: 1px;
+  height: 20px;
+  background: #555;
+}

@@ -1,19 +1,37 @@
 import React from "react";
-import type { Envelope, CharacterState } from "@cute/shared";
+import type { Envelope, CharacterState, BridgeError } from "@cute/shared";
 
 interface Props {
   state: CharacterState["payload"] | null;
   lastEnvelope: Envelope | null;
+  lastError: BridgeError["payload"] | null;
 }
 
 // cute_pixel interior_scene 的假设 viewport 大小。
 // TODO: 真值应该跟着 CHARACTER_STATE 一起上报(proto 加 viewport 字段),
 // 在那之前先 hardcode 一个 4:3 假设,让点位置至少能可视化。
-const VIEWPORT_W = 1024;
-const VIEWPORT_H = 600;
+const VIEWPORT_W = 270;
+const VIEWPORT_H = 480;
 
-const SVG_W = 320;
+const SVG_W = 180;
 const SVG_H = (SVG_W * VIEWPORT_H) / VIEWPORT_W;
+
+const ANIM_LABELS: Record<string, string> = {
+  idle_south: "站立",
+  walk_south: "走路(南)",
+  "walk-north": "走路(北)",
+  walk_east: "走路(东)",
+  "walk-west": "走路(西)",
+  "lie-down": "趴下",
+  yawn: "打哈欠",
+  sleeping: "睡觉中",
+  eating: "吃东西",
+  "happy-jumping": "开心跳",
+};
+
+function animLabel(anim: string): string {
+  return ANIM_LABELS[anim] ?? anim;
+}
 
 function scaleX(x: number): number {
   return (x / VIEWPORT_W) * SVG_W;
@@ -22,7 +40,7 @@ function scaleY(y: number): number {
   return (y / VIEWPORT_H) * SVG_H;
 }
 
-export function CharacterView({ state, lastEnvelope }: Props): JSX.Element {
+export function CharacterView({ state, lastEnvelope, lastError }: Props): JSX.Element {
   const cx = state ? scaleX(state.position.x) : null;
   const cy = state ? scaleY(state.position.y) : null;
   const inBounds =
@@ -83,7 +101,7 @@ export function CharacterView({ state, lastEnvelope }: Props): JSX.Element {
           {state ? (
             <>
               <div>位置: ({state.position.x.toFixed(0)}, {state.position.y.toFixed(0)})</div>
-              <div>动画: {state.animation}</div>
+              <div>动画: {animLabel(state.animation)}<span style={{ color: "#666", fontSize: 11 }}> ({state.animation})</span></div>
               <div>模式: {state.control_mode}</div>
               {!inBounds && (
                 <div style={{ color: "#e74c3c", fontSize: 11 }}>
@@ -96,6 +114,12 @@ export function CharacterView({ state, lastEnvelope }: Props): JSX.Element {
           )}
         </div>
       </div>
+
+      {lastError && (
+        <div style={{ background: "rgba(231,76,60,0.15)", border: "1px solid #e74c3c", borderRadius: 4, padding: 8, fontSize: 12 }}>
+          <strong>BRIDGE_ERROR</strong> [{lastError.code}]{lastError.originalType ? ` (${lastError.originalType})` : ""}: {lastError.message}
+        </div>
+      )}
 
       <div className="panel__title" style={{ marginTop: 8 }}>最近一帧 envelope (debug)</div>
       <pre>{lastEnvelope ? JSON.stringify(lastEnvelope, null, 2) : "—"}</pre>

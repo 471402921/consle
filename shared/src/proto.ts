@@ -11,7 +11,41 @@ export interface CharacterSetVelocity {
   payload: { x: number; y: number };
 }
 
-export type GodotCommand = CharacterSetExternalControl | CharacterSetVelocity;
+export interface SceneLoad {
+  type: "SCENE_LOAD";
+  payload: { scene: SceneName };
+}
+
+export interface CharacterFeed {
+  type: "CHARACTER_FEED";
+  payload: Record<string, never>;
+}
+
+export interface CharacterStopFeed {
+  type: "CHARACTER_STOP_FEED";
+  payload: Record<string, never>;
+}
+
+export interface CharacterSleep {
+  type: "CHARACTER_SLEEP";
+  payload: Record<string, never>;
+}
+
+export interface CharacterWake {
+  type: "CHARACTER_WAKE";
+  payload: Record<string, never>;
+}
+
+export type GodotCommand =
+  | CharacterSetExternalControl
+  | CharacterSetVelocity
+  | SceneLoad
+  | CharacterFeed
+  | CharacterStopFeed
+  | CharacterSleep
+  | CharacterWake;
+
+export type SceneName = "interior_scene" | "outdoor_scene";
 
 export interface CharacterState {
   type: "CHARACTER_STATE";
@@ -22,4 +56,18 @@ export interface CharacterState {
   };
 }
 
-export type GodotEvent = CharacterState;
+export interface SceneLoaded {
+  type: "SCENE_LOADED";
+  payload: { scene: SceneName };
+}
+
+export interface BridgeError {
+  type: "BRIDGE_ERROR";
+  payload: {
+    code: "INVALID_MESSAGE" | "UNKNOWN_TYPE" | "HANDLER_ERROR";
+    message: string;
+    originalType?: string;
+  };
+}
+
+export type GodotEvent = CharacterState | SceneLoaded | BridgeError;
